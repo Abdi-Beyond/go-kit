@@ -7,11 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
+	"github.com/Abdi-Beyond/go-kit/config"
 	"github.com/Abdi-Beyond/go-kit/core/dependency"
 	"github.com/Abdi-Beyond/go-kit/infrastructure/aws"
 	awsdynamo "github.com/Abdi-Beyond/go-kit/infrastructure/aws/dynamo"
-	awss3 "github.com/Abdi-Beyond/go-kit/infrastructure/aws/s3"
-	awssqs "github.com/Abdi-Beyond/go-kit/infrastructure/aws/sqs"
 
 	limitclient "github.com/Abdi-Beyond/go-kit/modules/limitclient/services"
 	limitrepo "github.com/Abdi-Beyond/go-kit/repo"
@@ -27,12 +26,13 @@ type Kit struct {
 }
 
 // New initializes the Kit with all clients and services
-func New(ctx context.Context, deps *dependency.AppDependencies) (*Kit, error) {
+func New(ctx context.Context, cfg *config.Config) (*Kit, error) {
 	// Load AWS configuration using your aws.Load function
+
 	awsCfg, err := aws.Load(ctx, aws.Config{
-		Region:          deps.Config.AWSRegion,
-		AccessKeyID:     deps.Config.AWSAccessKeyID,
-		SecretAccessKey: deps.Config.AWSSecretAccessKey,
+		Region:          cfg.AWSRegion,
+		AccessKeyID:     cfg.AWSAccessKeyID,
+		SecretAccessKey: cfg.AWSSecretAccessKey,
 	})
 	if err != nil {
 		return nil, err
@@ -40,18 +40,20 @@ func New(ctx context.Context, deps *dependency.AppDependencies) (*Kit, error) {
 
 	// Initialize AWS clients
 	dynamoClient := awsdynamo.New(awsCfg)
-	s3Client := awss3.New(awsCfg)
-	sqsClient := awssqs.New(awsCfg)
+
+	DEPS := &dependency.AppDependencies{
+		DBClient: dynamoClient,
+		Config:   cfg,
+	}
 
 	// Initialize LimitClient repository and service
-	limitRepo := limitrepo.NewRepositories(deps)
-	limitService := limitclient.NewPaymentService(limitRepo, deps)
+	limitRepo := limitrepo.NewRepositories(DEPS)
+	limitService := limitclient.NewPaymentService(limitRepo, DEPS)
 
 	// Assemble Kit
 	return &Kit{
 		Dynamo: dynamoClient,
-		S3:     s3Client,
-		SQS:    sqsClient,
-		Limit:  limitService,
+
+		Limit: limitService,
 	}, nil
 }
