@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/smithy-go"
 	"github.com/sirupsen/logrus"
 )
 
@@ -159,4 +161,48 @@ func (r *LimitCheckerRepo) SeedPlanFeatures(ctx context.Context, req models.Plan
 	}
 
 	return nil
+}
+func (r *LimitCheckerRepo) GetByUserID(ctx context.Context, userID string) (*models.SubscriptionList, error) {
+	if r.deps.Config.DynamoDBTables.Subscriptions == "" {
+		return nil, fmt.Errorf("DynamoDB table name is empty")
+	}
+	if userID == "" {
+		return nil, fmt.Errorf("userID cannot be empty")
+	}
+
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(r.deps.Config.DynamoDBTables.Subscriptions),
+		IndexName:              aws.String("subscriptions-userid-index"),
+		KeyConditionExpression: aws.String("user_id = :uid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":uid": &types.AttributeValueMemberS{Value: userID},
+		},
+		Limit:            aws.Int32(1),    // Only one item
+		ScanIndexForward: aws.Bool(false), // Get most recent first
+	}
+
+	resp, err := r.deps.DBClient.Query(ctx, input)
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "ValidationException":
+				return nil, fmt.Errorf("query validation failed: %w", err)
+			case "ResourceNotFoundException":
+				return nil, fmt.Errorf("table or index not found: %w", err)
+			}
+		}
+		return nil, fmt.Errorf("failed to query user subscription: %w", err)
+	}
+
+	if len(resp.Items) == 0 {
+		return nil, nil // No subscription found for this user
+	}
+
+	var sub models.SubscriptionList
+	if err := attributevalue.UnmarshalMap(resp.Items[0], &sub); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal subscription: %w", err)
+	}
+
+	return &sub, nil
 }
