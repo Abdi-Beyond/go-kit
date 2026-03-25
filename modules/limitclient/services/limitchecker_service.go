@@ -35,8 +35,12 @@ func (s *PaymentService) PropertyCreatedBytheUser(ctx context.Context, userid st
 	return s.Repo.Limitcheck.CountUserProperties(ctx, userid)
 }
 
-func (s *PaymentService) PlanDefinition(ctx context.Context, planID string, feature string) (*models.PlanFeature, error) {
-	return s.Repo.Limitcheck.PlanDefinition(ctx, planID, feature)
+func (s *PaymentService) PlanDefinition(ctx context.Context, userid string, feature string) (*models.PlanFeature, error) {
+	sub, err := s.Repo.Limitcheck.GetByUserID(ctx, userid)
+	if err != nil {
+		return nil, err
+	}
+	return s.Repo.Limitcheck.PlanDefinition(ctx, sub.PlanID, feature)
 }
 
 func (s *PaymentService) SeedPlanFeatures(ctx context.Context, req models.PlanFeature) error {
