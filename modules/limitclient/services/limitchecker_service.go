@@ -40,7 +40,12 @@ func (s *PaymentService) PlanDefinition(ctx context.Context, userid string, feat
 	if err != nil {
 		return nil, err
 	}
-	return s.Repo.Limitcheck.PlanDefinition(ctx, sub.PlanID, feature)
+
+	plans, err := s.Repo.Limitcheck.PlanDefinition(ctx, sub.PlanID, feature)
+	if err != nil {
+		return nil, err
+	}
+	return plans, nil
 }
 
 func (s *PaymentService) SeedPlanFeatures(ctx context.Context, req models.PlanFeature) error {
@@ -63,4 +68,23 @@ func (s *PaymentService) CheckLimit(ctx context.Context, userid string, req dto.
 		return 0, errors.New("invalid checked_service")
 	}
 
+}
+
+func (s *PaymentService) Is_Eligible(ctx context.Context, userid string, feature string) (bool, error) {
+	// Get the plan's defined limit for this feature
+	planFeature, err := s.PlanDefinition(ctx, userid, feature)
+	if err != nil {
+		return false, err
+	}
+
+	// Get the user's current usage for this feature
+	currentUsage, err := s.CheckLimit(ctx, userid, dto.LimitCheckRequest{
+		ServiceType: feature,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	// Compare current usage against the plan limit
+	return currentUsage < *planFeature.Limit, nil
 }
